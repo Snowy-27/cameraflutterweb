@@ -4,14 +4,22 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:webcamtest/preview.dart';
 
 void main() {
   // ignore: undefined_prefixed_name
-  ui.platformViewRegistry.registerViewFactory(
-      'video-view',
-          (int viewId) => video);
 
-  runApp(MyApp());
+  final VideoElement video = VideoElement();
+  final CanvasElement canvas = CanvasElement();
+  ui.platformViewRegistry
+      .registerViewFactory('video-view', (int viewId) => video);
+
+  runApp(MaterialApp(
+    home: HomePage(
+      video: video,
+      canvas: canvas,
+    ),
+  ));
 }
 
 class MyApp extends StatelessWidget {
@@ -28,96 +36,123 @@ class MyApp extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
+  const HomePage({Key? key, this.video, this.canvas}) : super(key: key);
+
+  final video;
+  final canvas;
   @override
   _HomePageState createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
+  var initialized = false;
   Uint8List? photoBytes;
   var access = false;
+
+  void requestCamera() async {
+    while (!initialized) {
+      try {
+        final mediaStream = await window.navigator.mediaDevices!
+            .getUserMedia({'video': true, 'audio': false});
+        widget.video.srcObject = mediaStream;
+        await widget.video.play();
+        setState(() {
+          initialized = true;
+          access = true;
+        });
+      } on DomException catch (e) {
+        print('Error: ${e.message}');
+      }
+    }
+    // if (initialized) {
+    //   print('Already init');
+    //   return true;
+    // }
+  }
+
+  void takePic(contextd) {
+    assert(
+      initialized,
+    );
+
+    final context = widget.canvas.context2D;
+
+    widget.canvas.width = widget.video.videoWidth;
+    widget.canvas.height = widget.video.videoHeight;
+    context.drawImage(widget.video, 0, 0);
+
+    final data = widget.canvas.toDataUrl('image/png');
+    // print(data);
+    final uri = Uri.parse(data);
+    // print(uri);
+    final bytes = uri.data!.contentAsBytes();
+    setState(() {
+      photoBytes = bytes;
+    });
+
+    Navigator.push(
+      contextd,
+      MaterialPageRoute(builder: (context) => PreviewImage(photoBytes: bytes)),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    requestCamera();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: Text('Flutter Web Camera'),
-        ),
-        body: Center(
-          child: SingleChildScrollView(
-            child: Column(children: [
-              SizedBox(height: 30),
-              ElevatedButton(
-                  onPressed: () async {
-                    print('Request!');
-                    final success = await requestCamera();
-                    if (!success) {
-                      print('Request failed!');
-                      return;
-                    }
-                    print('Done!');
-                    setState(() {
-                      access = true;
-                    });
-                  },
-                  child: Text('Press to access camera')),
-              ElevatedButton(
-                  onPressed: () async {
-                    if (!access) {
-                      return;
-                    }
-                    final bytes = takePic();
-                    setState(() {
-                      photoBytes = bytes;
-                    });
-                  },
-                  child: Text('Take still photo')),
+      appBar: AppBar(
+        title: Text('Flutter Web Camera'),
+      ),
+      body: Container(
+        padding: EdgeInsets.all(25),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // ElevatedButton(
+              //     onPressed: () async {
+              //       print('Request!');
+              //       final success = await requestCamera();
+              //       if (!success) {
+              //         print('Request failed!');
+              //         return;
+              //       }
+              //       print('Done!');
+              //       setState(() {
+              //         access = true;
+              //       });
+              //     },
+              //     child: Text('Press to access camera')),
+
               if (access)
                 Container(
-                    width: video.videoWidth.toDouble(),
-                    height: video.videoHeight.toDouble(),
+                    width: widget.video.videoWidth.toDouble(),
+                    height: widget.video.videoHeight.toDouble(),
                     child: HtmlElementView(viewType: 'video-view')),
-              if (photoBytes != null) Image.memory(photoBytes!),
-            ]),
+              // if (photoBytes != null) Image.memory(photoBytes!),
+            ],
           ),
-        ));
+        ),
+      ),
+      floatingActionButton: ElevatedButton(
+        onPressed: () async {
+          if (access) {
+            takePic(context);
+          } else {
+            requestCamera();
+          }
+        },
+        child: Icon(
+          Icons.camera,
+        ),
+      ),
+    );
   }
 }
 
 /* camera.dart */
-var initialized = false;
-
-final VideoElement video = VideoElement();
-final CanvasElement canvas = CanvasElement();
-
-Future<bool> requestCamera() async {
-  if (initialized) {
-    print('Already init');
-    return true;
-  }
-
-  try {
-    final mediaStream = await window.navigator.mediaDevices!
-        .getUserMedia({'video': true, 'audio': false});
-    video.srcObject = mediaStream;
-    await video.play();
-    initialized = true;
-    return true;
-  } on DomException catch (e) {
-    print('Error: ${e.message}');
-  }
-  return false;
-}
-
-Uint8List takePic() {
-  assert(initialized);
-
-  final context = canvas.context2D;
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  context.drawImage(video, 0, 0);
-
-  final data = canvas.toDataUrl('image/png');
-  final uri = Uri.parse(data);
-  return uri.data!.contentAsBytes();
-}
